@@ -19,3 +19,6 @@
 	path = prep/NKSR
 	url = https://github.com/nv-tlabs/NKSR.git
 	branch = public
+[submodule "prep/GeoCalib"]
+	path = prep/GeoCalib
+	url = https://github.com/hongsukchoi/GeoCalib.git
