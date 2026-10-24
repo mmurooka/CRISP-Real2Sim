@@ -13,7 +13,7 @@ uv venv --allow-existing --python 3.10 .venv-contact
 uv pip install --python .venv-contact/bin/python \
     torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 \
     --index-url https://download.pytorch.org/whl/cu121
-uv pip install --python .venv-contact/bin/python 'setuptools<81' wheel ninja numpy==1.24.2
+uv pip install --python .venv-contact/bin/python pip 'setuptools<81' wheel ninja 'cython<3' numpy==1.24.2
 TMP_REQ="$(mktemp)"
 trap 'rm -f "$TMP_REQ"' EXIT
 # Build PyTorch3D only after installing torch and the Python dependencies.

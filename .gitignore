@@ -122,3 +122,6 @@ holosoma
 # Local Python environments
 /.venv/
 /.venv-contact/
+
+# Local research reports, videos and figures
+/reports/

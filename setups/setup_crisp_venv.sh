@@ -12,8 +12,13 @@ export TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST:-8.9}"
 [[ -x "$CUDA_HOME/bin/nvcc" ]] || { echo "Set CUDA_HOME to your CUDA 12.4 toolkit." >&2; exit 1; }
 command -v uv >/dev/null || { echo "uv is required." >&2; exit 1; }
 uv venv --allow-existing --python 3.10 .venv
+uv pip install --python .venv/bin/python --index-url https://download.pytorch.org/whl/cu124 \
+    torch==2.4.1+cu124 torchvision==0.19.1+cu124 torchaudio==2.4.1+cu124
+# uv prioritizes extra indexes differently from pip; choose this CUDA wheel explicitly.
+uv pip install --python .venv/bin/python --index-url https://download.pytorch.org/whl/cu124 \
+    --no-deps --reinstall-package xformers xformers==0.0.28.post1
 uv pip install --python .venv/bin/python -r requirements-crisp-video.txt
-uv pip install --python .venv/bin/python 'setuptools<81' wheel ninja cmake
+uv pip install --python .venv/bin/python pip 'setuptools<81' wheel ninja cmake
 uv pip install --python .venv/bin/python --no-deps nerfstudio==0.3.3
 uv pip install --python .venv/bin/python --no-build-isolation \
     'git+https://github.com/facebookresearch/pytorch3d.git@stable' \
