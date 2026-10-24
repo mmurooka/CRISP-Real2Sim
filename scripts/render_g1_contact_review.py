@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Render a local kinematic G1 contact trajectory with source video crops."""
 import argparse
+import hashlib
 from fractions import Fraction
 import json
 from pathlib import Path
@@ -21,6 +22,13 @@ def main():
     parser.add_argument('--speed',type=float,default=1.,help='Presentation speed; source timestamps stay unchanged')
     parser.add_argument('--contact-forces',action='store_true',help='Draw recorded box contact forces, aligned to the saved physics states')
     args=parser.parse_args()
+    requested_crops=args.crops
+    privacy_crops=args.crops.parent.with_name(args.crops.parent.name+'_mosaic')/args.crops.name
+    if (privacy_crops/'crop_metadata.json').is_file():
+        privacy_meta=json.loads((privacy_crops/'crop_metadata.json').read_text())
+        if privacy_meta.get('privacy_pixelated') and privacy_meta.get('complete'):
+            args.crops=privacy_crops
+            print('Using face-pixelated review crops:',args.crops,flush=True)
     if args.output.exists():raise FileExistsError(args.output)
     root=args.trajectory;meta=json.loads((root/'metadata.json').read_text())
     if not np.isfinite(args.speed) or args.speed<=0:raise ValueError('Positive presentation speed required')
@@ -104,6 +112,14 @@ def main():
             process.stdin.close()
             if process.wait():raise RuntimeError('Video encoding failed')
     if stills:cv2.imwrite(str(args.output),cv2.cvtColor(np.concatenate(stills,axis=0),cv2.COLOR_RGB2BGR))
+    args.output.with_suffix('.json').write_text(json.dumps(dict(
+        source_trajectory=str(root.resolve()),
+        trajectory_sha256=hashlib.sha256((root/'trajectory.npz').read_bytes()).hexdigest(),
+        requested_crops=str(requested_crops),effective_crops=str(args.crops),
+        crop_metadata_sha256=hashlib.sha256((args.crops/'crop_metadata.json').read_bytes()).hexdigest(),
+        face_pixelated=bool(cropmeta.get('privacy_pixelated')),
+        source_frame_indices=frames[selected].tolist(),speed=args.speed,
+        interpretation='Source images use the recorded privacy copy; robot geometry and saved physical states are unchanged.'),indent=2))
 
 
 if __name__=='__main__':main()
