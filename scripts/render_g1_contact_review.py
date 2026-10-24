@@ -19,11 +19,14 @@ def main():
     parser.add_argument('--side',type=int,default=512)
     parser.add_argument('--frames',type=int,nargs='+')
     parser.add_argument('--speed',type=float,default=1.,help='Presentation speed; source timestamps stay unchanged')
+    parser.add_argument('--contact-forces',action='store_true',help='Draw recorded box contact forces, aligned to the saved physics states')
     args=parser.parse_args()
     if args.output.exists():raise FileExistsError(args.output)
     root=args.trajectory;meta=json.loads((root/'metadata.json').read_text())
     if not np.isfinite(args.speed) or args.speed<=0:raise ValueError('Positive presentation speed required')
     physics=meta.get('schema')=='g1_unassisted_physics_rollout_v1'
+    if args.contact_forces and not physics:raise ValueError('Recorded contact forces require a physical rollout')
+    metrics=json.loads((root/'metrics.json').read_text()) if args.contact_forces else None
     records=json.loads((root/'diagnostics.json').read_text())
     cropmeta=json.loads((args.crops/'crop_metadata.json').read_text())
     if meta['source_video_sha256']!=cropmeta['source_video_sha256']:raise ValueError('Video provenance mismatch')
@@ -45,6 +48,14 @@ def main():
     try:
         for index in selected:
             frame=int(frames[index]);data.qpos[:]=trajectory['qpos'][index];mujoco.mj_forward(model,data)
+            # Trajectories are saved before each action; metrics describe the
+            # state after it. Record i-1 therefore belongs to saved state i.
+            force_contacts=[]
+            if metrics is not None and index>0:
+                sample=metrics[index-1]
+                if not np.isclose(sample['reference_time_s'],times[index],atol=1e-6):
+                    raise ValueError('Contact forces and saved physics states are not aligned')
+                force_contacts=sample['object_contacts']
             rgb=cv2.cvtColor(cv2.imread(str(args.crops/f'{frame:05d}.jpg')),cv2.COLOR_BGR2RGB)
             panels=[cv2.resize(rgb,(size,size))]
             camera.lookat[:]=(data.xpos[1]+data.xpos[box])/2;camera.lookat[2]=.8
@@ -58,6 +69,21 @@ def main():
                         geom=renderer.scene.geoms[renderer.scene.ngeom]
                         mujoco.mjv_initGeom(geom,mujoco.mjtGeom.mjGEOM_SPHERE,np.array([.012,.012,.012]),point,np.eye(3).reshape(-1),np.array(color,dtype=np.float32))
                         renderer.scene.ngeom+=1
+                for contact in force_contacts:
+                    force=np.asarray(contact['force_on_object_world_n']);magnitude=np.linalg.norm(force)
+                    if magnitude<.1:continue
+                    local=np.asarray(contact['point_object'])
+                    point=data.xpos[box]+data.xmat[box].reshape(3,3)@local
+                    near_target=any(int(model.body_weldid[t['robot_body_id']])==contact['other_weld'] and
+                        np.linalg.norm(local-np.asarray(t['point_object']))<.03 for t in records[index]['targets'])
+                    color=np.array([.9,.2,1.,1] if near_target else [1.,.85,.1,1],np.float32)
+                    geom=renderer.scene.geoms[renderer.scene.ngeom]
+                    mujoco.mjv_initGeom(geom,mujoco.mjtGeom.mjGEOM_ARROW,np.zeros(3),point,np.eye(3).reshape(-1),color)
+                    # Incoming arrows end at the physical contact, avoiding
+                    # hiding the whole force vector inside the box surface.
+                    mujoco.mjv_connector(geom,mujoco.mjtGeom.mjGEOM_ARROW,.006,
+                        point-force/magnitude*min(.003*magnitude,.15),point)
+                    renderer.scene.ngeom+=1
                 panels.append(renderer.render().copy())
             title='G1 physics rollout' if physics else 'G1 contact IK'
             for panel,label in zip(panels,('Source RGB',title+' - oblique',title+' - side')):
@@ -67,6 +93,9 @@ def main():
             status=(meta.get('controller','physics')+' - simulated, no root/object assistance') if physics else 'KINEMATIC CANDIDATE - not a controller'
             cv2.putText(combined,f'frame {frame:03d}  {times[index]:.2f}s  {status}',
                 (12,size-14),cv2.FONT_HERSHEY_SIMPLEX,.5,(255,60,40),1,cv2.LINE_AA)
+            if args.contact_forces:
+                cv2.putText(combined,'Arrows: simulated forces on box; purple = within 3 cm of target on matching body',
+                    (12,size-36),cv2.FONT_HERSHEY_SIMPLEX,.44,(120,20,145),1,cv2.LINE_AA)
             if process:process.stdin.write(combined.tobytes())
             else:stills.append(combined)
     finally:
