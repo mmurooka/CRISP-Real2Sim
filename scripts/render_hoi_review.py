@@ -61,7 +61,12 @@ def main():
         evidence=contact['contact_evidence_code'] if 'contact_evidence_code' in contact else contact['active'].astype(np.uint8)
         red_label='visual plus geometry' if metadata.get('contact_prior_source')=='interactvlm' else 'provided prior plus geometry'
         if metadata.get('contact_prior_source')=='uninformative_geometry_only':red_label='geometry-only candidate'
+    prior_code=contact.get('contact_prior_evidence_code') if contact is not None else None
     semantic=None
+    if prior_code is not None:
+        if prior_code.shape!=evidence.shape:raise ValueError('Prior-source indexing mismatch')
+        semantic=((prior_code&2)>0)&((evidence&1)>0)
+        red_label='InteractVLM plus geometry'
     if args.semantic_cues:
         semantic_meta=json.loads((args.semantic_cues/'metadata.json').read_text())
         if not semantic_meta.get('complete'):raise ValueError('Semantic cue inference/fusion is incomplete')
@@ -118,11 +123,13 @@ def main():
             colors=base_colors.copy()
             if contact:
                 flags=evidence[i]
+                original_visual=(flags&1)>0
+                if prior_code is not None:original_visual&=(prior_code[i]&1)>0
                 colors[np.flatnonzero(flags&2)]=[1.,.75,.05]
                 colors[np.flatnonzero(flags&12)]=[.8,.2,.95]
-                colors[np.flatnonzero(flags&1)]=[1.,.12,.10]
+                colors[np.flatnonzero(original_visual)]=[1.,.12,.10]
                 if semantic is not None:
-                    colors[np.flatnonzero(semantic[i]&((flags&1)==0))]=[.02,.9,.72]
+                    colors[np.flatnonzero(semantic[i]&~original_visual)]=[.02,.9,.72]
             colors=torch.tensor(colors[None],dtype=torch.float32,device='cuda')
             camera=human['world_from_camera'][i]
             camera_vertices=(vertices-camera[:3,3])@camera[:3,:3]
@@ -172,7 +179,8 @@ def main():
         source_contacts_sha256=sha256(args.contacts) if args.contacts else None,
         source_semantic_cues_sha256=sha256(args.semantic_cues/'cues.npz') if args.semantic_cues else None,
         source_semantic_metadata_sha256=sha256(args.semantic_cues/'metadata.json') if args.semantic_cues else None,
-        supplementary_color='cyan: language/image/geometry candidate on vertices not already marked by the original visual prior' if args.semantic_cues else None,
+        supplementary_color='cyan: language/image/geometry candidate on vertices not already marked by the original visual prior' if semantic is not None else None,
+        semantic_source='explicit supplementary cue archive' if args.semantic_cues else ('prior-source bits in contact archive' if prior_code is not None else None),
         contact_colors={'red':red_label,'yellow':'one feasible force explanation','purple':'conditional individual or group necessity'} if contact else None,
         virtual_camera='fixed' if args.fixed_view else 'following_translation_constant_orientation_and_focal_length',
         interpretation='Estimated geometry and model-conditional contact evidence; not independent 3D/contact ground truth'),indent=2))

@@ -62,6 +62,12 @@ not a replacement for learned vertex masks or a measured contact assignment.
 show the supplement in cyan on vertices that were not already marked by the
 original visual prior. It checks the human hash, video, times and vertex indexing;
 the original force and visual evidence archives are not changed.
+For a separate downstream experiment, PRISM's `augment_contact_prior.py` can
+create a binary union with the original contact input. It checks the exact
+base-input hash and retains separate prior-source bits through reconstruction
+and retarget selection. Rerun contact/dynamics inference on that new input;
+adding prior weights can move candidate force-patch centroids. The renderer
+distinguishes the two prior sources in this augmented contact archive as well.
 
 ## Interpretation and current limitations
 
