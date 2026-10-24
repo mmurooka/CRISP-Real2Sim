@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Local review video: source crop, camera overlay and an independent 3D view."""
 import argparse
+from fractions import Fraction
 import json
 from pathlib import Path
 import subprocess
@@ -8,6 +9,7 @@ import sys
 
 import cv2
 import numpy as np
+from scipy.ndimage import gaussian_filter1d
 from scipy.spatial.transform import Rotation
 import torch
 import trimesh
@@ -31,6 +33,7 @@ def main():
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--side',type=int,default=512)
     parser.add_argument('--frames',type=int,nargs='+',help='Selected source indices for diagnostic stills')
+    parser.add_argument('--fixed-view',action='store_true',help='Use a fixed wide 3D camera instead of following the actors')
     args=parser.parse_args()
     root=Path(__file__).resolve().parents[1]
     sys.path.insert(0,str(root/'prep/HMR'))
@@ -49,11 +52,18 @@ def main():
     up=box['floor_normal_world'];target=human['human_vertices_world'][:,::100].mean(axis=(0,1))
     eye=target+Rotation.from_rotvec(up*np.deg2rad(-55)).apply(-target)*1.25
     view=look_at(eye,target,up)
-    # Fit one fixed virtual camera to the entire motion; no per-frame zoom.
+    # Fit a constant focal length; optionally follow translation to keep
+    # contact details readable. This camera is only for reviewing geometry.
     box_all=np.einsum('tij,vj->tvi',box['world_from_object'][:,:3,:3],mesh.vertices)+box['world_from_object'][:,None,:3,3]
-    all_points=np.r_[human['human_vertices_world'][:,::40].reshape(-1,3),box_all.reshape(-1,3)]
-    view_points=(all_points-eye)@view.T
-    extent=np.abs(view_points[:,:2]/view_points[:,2:]).max()
+    all_points=np.concatenate([human['human_vertices_world'][:,::40],box_all],axis=1)
+    if args.fixed_view:
+        eyes=np.repeat(eye[None],count,axis=0)
+    else:
+        centers=(all_points.min(axis=1)+all_points.max(axis=1))/2
+        centers=gaussian_filter1d(centers,2,axis=0,mode='nearest')
+        eyes=centers+(eye-target)/np.linalg.norm(eye-target)*3.5
+    view_points=(all_points-eyes[:,None])@view.T
+    extent=np.abs(view_points[...,:2]/view_points[...,2:]).max()
     focal=min(size*1.4,size*.43/extent)
     k_view=np.array([[focal,0,size/2],[0,focal,size/2],[0,0,1.]])
     viewer=Renderer(size,size,faces=faces,K=torch.tensor(k_view,dtype=torch.float32))
@@ -61,10 +71,13 @@ def main():
     if args.output.exists():raise FileExistsError(args.output)
     dt=np.diff(human['timestamps_s'])
     if not np.allclose(dt,dt[0],atol=1e-6):raise ValueError('Renderer requires constant presentation rate')
-    fps=1/dt[0];encoder=None;stills=[]
+    # Frame timestamps are rounded to microseconds by ffprobe. Recover the
+    # rational rate from the full duration, not a single rounded interval.
+    rate=Fraction(float((count-1)/(human['timestamps_s'][-1]-human['timestamps_s'][0]))).limit_denominator(1001)
+    fps=float(rate);encoder=None;stills=[]
     if not args.frames:
         encoder=subprocess.Popen(['ffmpeg','-v','error','-y','-f','rawvideo','-pix_fmt','rgb24','-s',f'{size*3}x{size}',
-            '-r',str(fps),'-i','-','-an','-c:v','libx264','-crf','20','-pix_fmt','yuv420p','-movflags','+faststart',str(args.output)],stdin=subprocess.PIPE)
+            '-r',str(rate),'-i','-','-an','-c:v','libx264','-crf','20','-pix_fmt','yuv420p','-movflags','+faststart',str(args.output)],stdin=subprocess.PIPE)
     try:
         for i in (args.frames or range(count)):
             rgb=cv2.cvtColor(cv2.imread(str(args.crops/f'{i:05d}.jpg')),cv2.COLOR_BGR2RGB)
@@ -77,9 +90,9 @@ def main():
             renderer=Renderer(size,size,faces=faces,K=torch.tensor(k,dtype=torch.float32))
             rendered=renderer.render_mesh(torch.tensor(camera_vertices,dtype=torch.float32,device='cuda'),rgb,colors,VI=1)
             overlay=cv2.addWeighted(rgb,.40,rendered,.60,0)
-            side=viewer.render_mesh(torch.tensor((vertices-eye)@view.T,dtype=torch.float32,device='cuda'),colors=colors,VI=1)
+            side=viewer.render_mesh(torch.tensor((vertices-eyes[i])@view.T,dtype=torch.float32,device='cuda'),colors=colors,VI=1)
             panels=[rgb,overlay,side]
-            for panel,label in zip(panels,['RGB','Reconstruction overlay','3D side view (estimated)']):
+            for panel,label in zip(panels,['RGB','Reconstruction overlay','3D fixed view' if args.fixed_view else '3D following view']):
                 cv2.rectangle(panel,(0,0),(size,32),(245,245,245),-1)
                 cv2.putText(panel,label,(10,23),cv2.FONT_HERSHEY_SIMPLEX,.57,(20,30,40),1,cv2.LINE_AA)
             combined=np.concatenate(panels,axis=1)
@@ -94,6 +107,7 @@ def main():
     if stills:cv2.imwrite(str(args.output),cv2.cvtColor(np.concatenate(stills,axis=0),cv2.COLOR_RGB2BGR))
     args.output.with_suffix('.json').write_text(json.dumps(dict(source_human_sha256=sha256(args.human),
         source_object_sha256=sha256(args.object),frame_indices=args.frames or list(range(count)),fps=fps,
+        virtual_camera='fixed' if args.fixed_view else 'following_translation_constant_orientation_and_focal_length',
         interpretation='Estimated geometry, not contact labels or 3D ground truth'),indent=2))
 
 
