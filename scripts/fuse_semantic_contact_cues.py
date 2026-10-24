@@ -74,6 +74,17 @@ def persistent_candidates(states, image_cues, minimum_frames):
     return raw, persistent
 
 
+def inference_image_path(metadata, frame, record):
+    """Resolve an explicit per-frame input when combining documented runs."""
+    if 'frame_image_paths' in metadata:
+        path = Path(metadata['frame_image_paths'][str(frame)])
+    else:
+        path = Path(metadata['frames']) / f'{frame:05d}.jpg'
+    if 'image_path' in record and Path(record['image_path']).resolve() != path.resolve():
+        raise ValueError('Inference record/image manifest mismatch')
+    return path
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--language", type=Path, required=True)
@@ -107,7 +118,7 @@ def main():
         record = json.loads(path.read_text())
         if record["frame_index"] != frame:
             raise ValueError("Language frame index mismatch")
-        image_path = Path(language_meta["frames"]) / f"{frame:05d}.jpg"
+        image_path = inference_image_path(language_meta, frame, record)
         if record["image_sha256"] != sha256(image_path):
             raise ValueError(f"Language image has changed: {image_path}")
         parsed, error = parse_response(record["raw_response"])
@@ -148,6 +159,7 @@ def main():
                     source_human_sha256=cue_meta["source_human_sha256"],
                     source_contact_input_sha256=cue_meta["source_contact_input_sha256"],
                     language_metadata_sha256=sha256(args.language / "metadata.json"),
+                    language_input_provenance=language_meta.get('combined_run_provenance'),
                     image_cues=str(args.image_cues.resolve()),
                     image_cue_metadata_sha256=sha256(args.image_cues / "metadata.json"),
                     image_cues_sha256=sha256(args.image_cues / "cues.npz"),

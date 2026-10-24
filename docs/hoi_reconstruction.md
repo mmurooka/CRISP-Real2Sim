@@ -116,3 +116,9 @@ the sibling `_mosaic` crop directory when it exists and records the effective
 input. Existing estimates from before this request are not represented as
 having been recomputed from pixelated images.
 
+When reusing historical image-language results alongside new privacy-copy
+inference, the fusion input can supply `frame_image_paths` and
+`combined_run_provenance`. Each response must match its own recorded input path
+and hash. Such a combined sequence is not a controlled comparison of pixelation,
+resolution, or batch size; report the selected frame counts from every run.
+

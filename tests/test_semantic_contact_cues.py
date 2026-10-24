@@ -5,10 +5,17 @@ import unittest
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from fuse_semantic_contact_cues import conservative_contacts, semantic_states, persistent_candidates
+from fuse_semantic_contact_cues import conservative_contacts, semantic_states, persistent_candidates, inference_image_path
 
 
 class SemanticContactCueTests(unittest.TestCase):
+    def test_mixed_run_manifest_keeps_each_actual_input(self):
+        metadata = {'frame_image_paths': {'0': '/tmp/original/00000.jpg', '1': '/tmp/mosaic/00001.jpg'}}
+        self.assertEqual(inference_image_path(metadata, 1, {'image_path': '/tmp/mosaic/00001.jpg'}),
+                         Path('/tmp/mosaic/00001.jpg'))
+        with self.assertRaisesRegex(ValueError, 'manifest mismatch'):
+            inference_image_path(metadata, 1, {'image_path': '/tmp/original/00001.jpg'})
+
     def test_geometry_selects_side_and_rejects_distant_foot(self):
         regions = ["left_thigh", "right_thigh", "left_foot", "right_foot"]
         language = [{"region": "thigh", "side": "left", "state": "likely"},
