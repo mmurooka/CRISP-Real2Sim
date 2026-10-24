@@ -14,6 +14,10 @@ The scripts below are an independent moving-cuboid extension; they are not the u
 8. PRISM `scripts/prepare_whole_body_input.py` and `scripts/reconstruct_whole_body_contacts.py`: visual/geometric contact persistence, gravity-aware Newton–Euler fitting and region-removal tests.
 9. `render_hoi_review.py`: local source/overlay/independent-view comparison video at the original frame rate.
 
+`refine_hoi_human.py` optionally refines SMPL-X pose and translation against COCO17 image observations, the original motion prior, temporal continuity, and box/floor nonpenetration. The box is fixed in this stage. `--geometry-only` adds no contact attraction; `--contacts` requires complete, provenance-matched InteractVLM masks and limits attraction to learned regions within 30 cm of the independently estimated object. It is not a joint object/human optimization or an anatomical joint-limit certificate. `evaluate_hoi_geometry.py` compares image agreement and intersections using the same procedure before and after refinement.
+
+`setups/install_interactvlm_checkpoint.py` installs a completed user-downloaded wScene ZIP locally, checks archive CRCs and shard completeness, rejects unsafe archive paths, and records the archive SHA-256. It does not download models or handle credentials.
+
 All generated videos, data, models and reports belong in ignored directories. Changes to code are committed separately from those outputs. Source video hashes, timestamp arrays, world-frame identifiers and body topology must match before contacts are assembled.
 
 ## Interpretation and current limitations
