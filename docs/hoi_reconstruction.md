@@ -97,3 +97,22 @@ controller or promote candidate contacts to ground truth.
   --g1 results/move_box_adjusted_by_leg/g1_wrench_optimized_v2 \
   --output results/exports/move_box_hoi_v1
 ```
+# Privacy copies for subsequent work
+
+The user requested light face pixelation on 2026-10-25. Subsequent visual
+inspection, language-model inference and HTML reports should use:
+
+- `videos/move_box_adjusted_by_leg_mosaic.mp4`
+- `data/move_box_contact_img_mosaic/move_box_adjusted_by_leg/`
+- `data/move_box_img_mosaic/move_box_adjusted_by_leg/`
+
+`scripts/prepare_private_review_media.py` generates the video and square crops
+locally from the projected reconstructed head, with a spatial margin and a
+five-frame envelope. Originals remain local for historical provenance; do not
+use them as the default review media. The original video identity in geometry
+metadata is retained, while altered media hashes are recorded separately in
+`results/move_box_adjusted_by_leg/privacy_media_v1.json`. The HOI renderer prefers
+the sibling `_mosaic` crop directory when it exists and records the effective
+input. Existing estimates from before this request are not represented as
+having been recomputed from pixelated images.
+

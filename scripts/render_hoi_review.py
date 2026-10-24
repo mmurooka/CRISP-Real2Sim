@@ -37,6 +37,15 @@ def main():
     parser.add_argument('--contacts',type=Path,help='Provenance-matched PRISM contact archive; keep evidence sources distinct')
     parser.add_argument('--semantic-cues',type=Path,help='Optional supplementary language/image/geometry cue directory')
     args=parser.parse_args()
+    requested_crops=args.crops
+    # Prefer the user's privacy copy even for an older queued render command.
+    # This changes display pixels only; geometry retains its original identity.
+    privacy_crops=args.crops.parent.with_name(args.crops.parent.name+'_mosaic')/args.crops.name
+    if (privacy_crops/'crop_metadata.json').is_file():
+        privacy_meta=json.loads((privacy_crops/'crop_metadata.json').read_text())
+        if privacy_meta.get('privacy_pixelated') and privacy_meta.get('complete'):
+            args.crops=privacy_crops
+            print('Using face-pixelated review crops:',args.crops,flush=True)
     if args.semantic_cues and not args.contacts:raise ValueError('Semantic supplement requires the original contact evidence for comparison')
     root=Path(__file__).resolve().parents[1]
     sys.path.insert(0,str(root/'prep/HMR'))
@@ -175,6 +184,9 @@ def main():
             if encoder.wait():raise RuntimeError('Video encoding failed')
     if stills:cv2.imwrite(str(args.output),cv2.cvtColor(np.concatenate(stills,axis=0),cv2.COLOR_RGB2BGR))
     args.output.with_suffix('.json').write_text(json.dumps(dict(source_human_sha256=sha256(args.human),
+        requested_crops=str(requested_crops),effective_crops=str(args.crops),
+        face_pixelated=bool(crop_meta.get('privacy_pixelated')),
+        crop_metadata_sha256=sha256(args.crops/'crop_metadata.json'),
         source_object_sha256=sha256(args.object),frame_indices=args.frames or list(range(count)),fps=fps,
         source_contacts_sha256=sha256(args.contacts) if args.contacts else None,
         source_semantic_cues_sha256=sha256(args.semantic_cues/'cues.npz') if args.semantic_cues else None,
