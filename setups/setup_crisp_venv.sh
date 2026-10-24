@@ -23,6 +23,11 @@ uv pip install --python .venv/bin/python --no-deps nerfstudio==0.3.3
 uv pip install --python .venv/bin/python --no-build-isolation \
     'git+https://github.com/facebookresearch/pytorch3d.git@stable' \
     'git+https://github.com/mattloper/chumpy.git'
+# A cached extension may have been built in the separate Torch 2.1 contact env.
+if ! .venv/bin/python -c 'from pytorch3d import _C'; then
+    uv pip install --python .venv/bin/python --no-cache --no-deps --no-build-isolation \
+        --reinstall-package pytorch3d 'git+https://github.com/facebookresearch/pytorch3d.git@stable'
+fi
 SAM2_BUILD_ALLOW_ERRORS=1 uv pip install --python .venv/bin/python --no-deps --no-build-isolation \
     -e prep/AutoMask -e prep/HMR -e prep/UFM/UniCeption -e prep/UFM -e vis_scripts/viser_m
 uv pip install --python .venv/bin/python --no-deps --no-build-isolation ./prep/MogeSAM/third_party/pointops2

@@ -51,6 +51,7 @@ for module_name in modules:
     importlib.import_module(module_name)
 
 print("core-imports-ok")
+from pytorch3d import _C  # Importing the top-level package does not test its ABI.
 PY
 
 run_help_check "$REPO_ROOT/prep/AutoMask" "custom_mask.py"
