@@ -145,6 +145,8 @@ def main():
                         fused_vertex_candidate=vertices, source_video_sha256=video_sha)
     metadata = dict(schema="language_image_geometry_contact_candidates_v1", complete=True,
                     source_video_sha256=video_sha, language=str(args.language.resolve()),
+                    source_human_sha256=cue_meta["source_human_sha256"],
+                    source_contact_input_sha256=cue_meta["source_contact_input_sha256"],
                     language_metadata_sha256=sha256(args.language / "metadata.json"),
                     image_cues=str(args.image_cues.resolve()),
                     image_cue_metadata_sha256=sha256(args.image_cues / "metadata.json"),

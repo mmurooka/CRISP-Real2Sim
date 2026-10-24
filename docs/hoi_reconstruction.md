@@ -58,6 +58,10 @@ as the contact target; this check can introduce false negatives and is not a
 second visual classifier. Raw responses, uncertainty, rejected proposals,
 and source hashes are retained. The output is a separate candidate supplement,
 not a replacement for learned vertex masks or a measured contact assignment.
+`render_hoi_review.py --contacts CONTACTS_NPZ --semantic-cues FUSED_DIR` can
+show the supplement in cyan on vertices that were not already marked by the
+original visual prior. It checks the human hash, video, times and vertex indexing;
+the original force and visual evidence archives are not changed.
 
 ## Interpretation and current limitations
 

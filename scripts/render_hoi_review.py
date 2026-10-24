@@ -35,7 +35,9 @@ def main():
     parser.add_argument('--frames',type=int,nargs='+',help='Selected source indices for diagnostic stills')
     parser.add_argument('--fixed-view',action='store_true',help='Use a fixed wide 3D camera instead of following the actors')
     parser.add_argument('--contacts',type=Path,help='Provenance-matched PRISM contact archive; keep evidence sources distinct')
+    parser.add_argument('--semantic-cues',type=Path,help='Optional supplementary language/image/geometry cue directory')
     args=parser.parse_args()
+    if args.semantic_cues and not args.contacts:raise ValueError('Semantic supplement requires the original contact evidence for comparison')
     root=Path(__file__).resolve().parents[1]
     sys.path.insert(0,str(root/'prep/HMR'))
     from hmr4d.utils.vis.renderer import Renderer
@@ -59,6 +61,17 @@ def main():
         evidence=contact['contact_evidence_code'] if 'contact_evidence_code' in contact else contact['active'].astype(np.uint8)
         red_label='visual plus geometry' if metadata.get('contact_prior_source')=='interactvlm' else 'provided prior plus geometry'
         if metadata.get('contact_prior_source')=='uninformative_geometry_only':red_label='geometry-only candidate'
+    semantic=None
+    if args.semantic_cues:
+        semantic_meta=json.loads((args.semantic_cues/'metadata.json').read_text())
+        if not semantic_meta.get('complete'):raise ValueError('Semantic cue inference/fusion is incomplete')
+        if semantic_meta['source_video_sha256']!=str(human['source_video_sha256']) or semantic_meta['source_human_sha256']!=sha256(args.human):
+            raise ValueError('Semantic cues use a different video or human reconstruction')
+        with np.load(args.semantic_cues/'cues.npz',allow_pickle=False) as a:
+            semantic=a['fused_vertex_candidate'].copy()
+            if not np.array_equal(a['human_vertex_regions'],contact['human_vertex_regions']):raise ValueError('Semantic vertex indexing mismatch')
+            if not np.allclose(a['timestamps_s'],human['timestamps_s']):raise ValueError('Semantic timing mismatch')
+        if semantic.shape!=evidence.shape or semantic.dtype!=np.bool_:raise ValueError('Invalid semantic candidate mask')
     size=args.side;count=len(human['timestamps_s']);mesh=trimesh.creation.box(extents=2*box['box_half_extents'])
     faces=np.r_[human['faces'],mesh.faces+human['human_vertices_world'].shape[1]]
     colors=np.r_[np.tile([.35,.65,.95],(6890,1)),np.tile([.95,.6,.25],(8,1))]
@@ -108,6 +121,8 @@ def main():
                 colors[np.flatnonzero(flags&2)]=[1.,.75,.05]
                 colors[np.flatnonzero(flags&12)]=[.8,.2,.95]
                 colors[np.flatnonzero(flags&1)]=[1.,.12,.10]
+                if semantic is not None:
+                    colors[np.flatnonzero(semantic[i]&((flags&1)==0))]=[.02,.9,.72]
             colors=torch.tensor(colors[None],dtype=torch.float32,device='cuda')
             camera=human['world_from_camera'][i]
             camera_vertices=(vertices-camera[:3,3])@camera[:3,:3]
@@ -141,6 +156,9 @@ def main():
             combined=np.concatenate(panels,axis=1)
             label='estimated contact evidence' if contact else 'geometry only'
             cv2.putText(combined,f'frame {i:03d}  {human["timestamps_s"][i]:.2f}s  {label}',(12,size-14),cv2.FONT_HERSHEY_SIMPLEX,.5,(255,30,30),1,cv2.LINE_AA)
+            if semantic is not None:
+                cv2.putText(combined,'Cyan: supplementary language + image/3D candidate (not ground truth)',
+                    (12,size-36),cv2.FONT_HERSHEY_SIMPLEX,.45,(0,115,90),1,cv2.LINE_AA)
             if encoder:encoder.stdin.write(combined.tobytes())
             else:stills.append(combined)
             if i%30==0:print(f'Render {i}/{count}',flush=True)
@@ -152,6 +170,9 @@ def main():
     args.output.with_suffix('.json').write_text(json.dumps(dict(source_human_sha256=sha256(args.human),
         source_object_sha256=sha256(args.object),frame_indices=args.frames or list(range(count)),fps=fps,
         source_contacts_sha256=sha256(args.contacts) if args.contacts else None,
+        source_semantic_cues_sha256=sha256(args.semantic_cues/'cues.npz') if args.semantic_cues else None,
+        source_semantic_metadata_sha256=sha256(args.semantic_cues/'metadata.json') if args.semantic_cues else None,
+        supplementary_color='cyan: language/image/geometry candidate on vertices not already marked by the original visual prior' if args.semantic_cues else None,
         contact_colors={'red':red_label,'yellow':'one feasible force explanation','purple':'conditional individual or group necessity'} if contact else None,
         virtual_camera='fixed' if args.fixed_view else 'following_translation_constant_orientation_and_focal_length',
         interpretation='Estimated geometry and model-conditional contact evidence; not independent 3D/contact ground truth'),indent=2))
