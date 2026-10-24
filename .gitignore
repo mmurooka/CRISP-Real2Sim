@@ -114,3 +114,6 @@ MotionTracking/motion_tracking/data/assets/**
 rendered_output
 
 holosoma
+
+# Local input video
+/videos/move_box_adjusted_by_leg.mp4
