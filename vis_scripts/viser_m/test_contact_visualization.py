@@ -1,4 +1,5 @@
 import tempfile
+import io
 import unittest
 from pathlib import Path
 
@@ -31,6 +32,22 @@ class ContactVisualizationTest(unittest.TestCase):
             np.savez(Path(directory) / "00000.npz", pred_contact_3d_smplh=[np.nan])
             with self.assertRaisesRegex(ValueError, "Non-finite"):
                 contact_vertex_colors(directory, 0, 1, [0, 0, 0])
+
+    def test_colors_survive_viewer_glb_serialization(self):
+        import trimesh
+
+        with tempfile.TemporaryDirectory() as directory:
+            np.savez(Path(directory) / "00000.npz", pred_contact_3d_smplh=[0, 1, 0])
+            colors = contact_vertex_colors(directory, 0, 3, [152, 251, 152])
+            mesh = trimesh.Trimesh(
+                vertices=[[0, 0, 0], [1, 0, 0], [0, 1, 0]],
+                faces=[[0, 1, 2]], vertex_colors=colors, process=False,
+            )
+            scene = trimesh.load(
+                io.BytesIO(mesh.export(file_type="glb")), file_type="glb", process=False,
+            )
+            restored = next(iter(scene.geometry.values()))
+            np.testing.assert_array_equal(restored.visual.vertex_colors, colors)
 
 
 if __name__ == "__main__":
