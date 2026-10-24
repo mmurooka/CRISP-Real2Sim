@@ -40,7 +40,11 @@ fi
 [[ -d "$DATA_PATH" ]] || { echo "Image folder not found: $DATA_PATH" >&2; exit 1; }
 
 if [[ -n "$CONTACT_PYTHON" ]]; then
-    CONTACT_PYTHON="$(realpath "$CONTACT_PYTHON")"
+    if [[ "$CONTACT_PYTHON" != */* ]]; then
+        CONTACT_PYTHON="$(command -v "$CONTACT_PYTHON")"
+    fi
+    # Preserve bin/python's symlink: resolving it would bypass the venv.
+    CONTACT_PYTHON="$(cd "$(dirname "$CONTACT_PYTHON")" && pwd)/$(basename "$CONTACT_PYTHON")"
     [[ -x "$CONTACT_PYTHON" ]] || { echo "Python not executable: $CONTACT_PYTHON" >&2; exit 1; }
 else
     command -v conda >/dev/null 2>&1 || { echo "Set CONTACT_PYTHON to the contact venv Python, or install conda." >&2; exit 1; }
