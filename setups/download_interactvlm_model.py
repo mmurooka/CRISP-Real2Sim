@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Interactive official wScene download; credentials stay in process memory."""
+"""Interactive official model download; credentials stay in process memory."""
+import argparse
 import getpass
 import os
 from pathlib import Path
@@ -8,13 +9,20 @@ import requests
 
 NAME = 'interactvlm-3d-hcontact-wScene-damon-lemon-rich.zip'
 URL = 'https://download.is.tue.mpg.de/download.php?domain=interactvlm&sfile=' + NAME
+MODELS = {
+    'interactvlm': ('interactvlm', NAME),
+    'smpl': ('smpl', 'SMPL_python_v.1.1.0.zip'),
+    'smplx': ('smplx', 'models_smplx_v1_1.zip'),
+}
 
 
-def download(destination, username, password):
+def download(destination, username, password, model='interactvlm'):
+    domain, name = MODELS[model]
+    url = f'https://download.is.tue.mpg.de/download.php?domain={domain}&sfile={name}'
     destination = Path(destination)
     destination.mkdir(parents=True, exist_ok=True)
-    final = destination / NAME
-    partial = destination / (NAME + '.part')
+    final = destination / name
+    partial = destination / (name + '.part')
     if final.exists():
         raise FileExistsError(f'Already present: {final}')
     offset = partial.stat().st_size if partial.exists() else 0
@@ -25,11 +33,11 @@ def download(destination, username, password):
     headers = {'Range': f'bytes={offset}-'} if offset else {}
     # Same authenticated POST endpoint used by upstream fetch_data.sh.
     # TLS verification remains enabled. Never print submitted credentials.
-    with requests.post(URL, data={'username': username, 'password': password},
+    with requests.post(url, data={'username': username, 'password': password},
                        headers=headers, stream=True, timeout=(20,120)) as response:
         response.raise_for_status()
         if 'text/html' in response.headers.get('Content-Type', '').lower():
-            raise RuntimeError('Server returned a web page instead of the ZIP. Check your InteractVLM account/login.')
+            raise RuntimeError(f'Server returned a web page instead of the ZIP. Check your {model} account/login.')
         resume = offset > 0 and response.status_code == 206
         if resume and not response.headers.get('Content-Range', '').startswith(f'bytes {offset}-'):
             raise RuntimeError('Unexpected resume range; existing partial file was preserved')
@@ -64,12 +72,16 @@ def download(destination, username, password):
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--model', choices=MODELS, default='interactvlm')
+    args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
-    print('Official InteractVLM wScene model download. Use your InteractVLM account.')
+    print(f'Official {args.model} download: {MODELS[args.model][1]}')
+    print(f'Use the account registered for {args.model}; it may differ from your other model accounts.')
     username = input('Email / username: ').strip()
     password = getpass.getpass('Password (hidden): ')
     try:
-        download(root/'data/downloads/manual', username, password)
+        download(root/'data/downloads/manual', username, password, args.model)
     except (requests.RequestException, OSError, ValueError, RuntimeError) as exc:
         print(f'\nDownload stopped: {type(exc).__name__}: {exc}', file=sys.stderr)
         sys.exit(1)
