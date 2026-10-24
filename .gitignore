@@ -117,6 +117,7 @@ holosoma
 
 # Local input video
 /videos/move_box_adjusted_by_leg.mp4
+/videos/move_box_adjusted_by_leg_crisp.mp4
 
 # Local Python environments
 /.venv/

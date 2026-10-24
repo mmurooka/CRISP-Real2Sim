@@ -32,6 +32,7 @@ import torch.nn.functional as F
 from scipy.ndimage import gaussian_filter, sobel
 import json
 from itertools import product
+from contact_visualization import contact_vertex_colors
 from path_config import (
     BODY_SEGMENTS_DIR,
     CONTACTS_ROOT,
@@ -2180,15 +2181,31 @@ def main(
 
                 mesh_color = [152, 251, 152]  # lighter pastel green for HMR meshes
                 mesh_opacity = 1.0
-                human_mesh_handle = server.scene.add_mesh_simple(
-                    name=f"/frames/t{i}/human_mesh",
-                    vertices=pred_vert[[i]],
-                    faces=faces,
-                    flat_shading=False,
-                    wireframe=False,
-                    color=mesh_color,
-                    opacity=mesh_opacity,
-                )
+                if USE_CONTACT:
+                    # Use the prediction for this original video frame, rather
+                    # than the index in the subsampled visualization sequence.
+                    vertex_colors = contact_vertex_colors(
+                        interact_contact_path, i, pred_vert.shape[1], mesh_color,
+                    )
+                    human_mesh_handle = server.scene.add_mesh_trimesh(
+                        name=f"/frames/t{i}/human_mesh",
+                        mesh=trimesh.Trimesh(
+                            vertices=pred_vert[i],
+                            faces=faces,
+                            vertex_colors=vertex_colors,
+                            process=False,
+                        ),
+                    )
+                else:
+                    human_mesh_handle = server.scene.add_mesh_simple(
+                        name=f"/frames/t{i}/human_mesh",
+                        vertices=pred_vert[[i]],
+                        faces=faces,
+                        flat_shading=False,
+                        wireframe=False,
+                        color=mesh_color,
+                        opacity=mesh_opacity,
+                    )
 
                 human_mesh_handle.visible = len(human_mesh_handles) == 0
                 human_mesh_handles.append(human_mesh_handle)
