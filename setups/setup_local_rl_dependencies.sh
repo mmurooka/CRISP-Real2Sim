@@ -11,4 +11,4 @@ import sys
 Path(sys.argv[1]).write_text('\n'.join(f'{name}=={version(name)}' for name in ('numpy','torch','mujoco'))+'\n')
 PY
 uv pip install --python "$PYTHON" --constraint "$CONSTRAINTS" \
-    stable-baselines3==2.4.1 gymnasium==1.0.0
+    stable-baselines3==2.4.1 gymnasium==1.0.0 loguru==0.7.3

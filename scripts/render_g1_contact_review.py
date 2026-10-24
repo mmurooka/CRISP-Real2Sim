@@ -18,9 +18,12 @@ def main():
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--side',type=int,default=512)
     parser.add_argument('--frames',type=int,nargs='+')
+    parser.add_argument('--speed',type=float,default=1.,help='Presentation speed; source timestamps stay unchanged')
     args=parser.parse_args()
     if args.output.exists():raise FileExistsError(args.output)
     root=args.trajectory;meta=json.loads((root/'metadata.json').read_text())
+    if not np.isfinite(args.speed) or args.speed<=0:raise ValueError('Positive presentation speed required')
+    physics=meta.get('schema')=='g1_unassisted_physics_rollout_v1'
     records=json.loads((root/'diagnostics.json').read_text())
     cropmeta=json.loads((args.crops/'crop_metadata.json').read_text())
     if meta['source_video_sha256']!=cropmeta['source_video_sha256']:raise ValueError('Video provenance mismatch')
@@ -36,7 +39,7 @@ def main():
     process=None;stills=[];args.output.parent.mkdir(parents=True,exist_ok=True)
     if args.frames is None:
         if meta['independent_diagnostic_frames']:raise ValueError('Independent frames cannot be rendered as continuous motion')
-        rate=Fraction(float((len(times)-1)/(times[-1]-times[0]))).limit_denominator(1001)
+        rate=Fraction(float((len(times)-1)/(times[-1]-times[0])*args.speed)).limit_denominator(1001)
         process=subprocess.Popen(['ffmpeg','-v','error','-f','rawvideo','-pix_fmt','rgb24','-s',f'{size*3}x{size}',
             '-r',str(rate),'-i','-','-an','-c:v','libx264','-crf','20','-pix_fmt','yuv420p','-movflags','+faststart',str(args.output)],stdin=subprocess.PIPE)
     try:
@@ -56,11 +59,13 @@ def main():
                         mujoco.mjv_initGeom(geom,mujoco.mjtGeom.mjGEOM_SPHERE,np.array([.012,.012,.012]),point,np.eye(3).reshape(-1),np.array(color,dtype=np.float32))
                         renderer.scene.ngeom+=1
                 panels.append(renderer.render().copy())
-            for panel,label in zip(panels,('Source RGB','G1 contact IK - oblique','G1 contact IK - side')):
+            title='G1 physics rollout' if physics else 'G1 contact IK'
+            for panel,label in zip(panels,('Source RGB',title+' - oblique',title+' - side')):
                 cv2.rectangle(panel,(0,0),(size,32),(245,245,245),-1)
                 cv2.putText(panel,label,(10,23),cv2.FONT_HERSHEY_SIMPLEX,.54,(20,30,40),1,cv2.LINE_AA)
             combined=np.concatenate(panels,axis=1)
-            cv2.putText(combined,f'frame {frame:03d}  {times[index]:.2f}s  KINEMATIC CANDIDATE - not a controller',
+            status=(meta.get('controller','physics')+' - simulated, no root/object assistance') if physics else 'KINEMATIC CANDIDATE - not a controller'
+            cv2.putText(combined,f'frame {frame:03d}  {times[index]:.2f}s  {status}',
                 (12,size-14),cv2.FONT_HERSHEY_SIMPLEX,.5,(255,60,40),1,cv2.LINE_AA)
             if process:process.stdin.write(combined.tobytes())
             else:stills.append(combined)
