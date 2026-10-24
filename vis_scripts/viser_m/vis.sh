@@ -17,6 +17,7 @@ ROOT_DIR="../../results/output/scene/${SEQ}_${HMR_TYPE}_sgd_cvd_hr.npz"
 # default OFF
 SAVE_MODE="${SAVE_MODE:-off}"
 USE_CONTACT="${USE_CONTACT:-off}"
+HUMAN_CONTACT="${HUMAN_CONTACT:-off}"
 
 case "${SAVE_MODE,,}" in
   on|true|1|yes|y)
@@ -44,9 +45,15 @@ case "${USE_CONTACT,,}" in
     ;;
 esac
 
+case "${HUMAN_CONTACT,,}" in
+  on|true|1|yes|y) HUMAN_CONTACT_FLAG="--human_contact" ;;
+  off|false|0|no|n|"") HUMAN_CONTACT_FLAG="--no-human_contact" ;;
+  *) echo "Invalid HUMAN_CONTACT='$HUMAN_CONTACT' (use on/off)." >&2; exit 2 ;;
+esac
+
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
 export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-1}"
 export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}"
 export NUMEXPR_NUM_THREADS="${NUMEXPR_NUM_THREADS:-1}"
 
-python visualizer_megasam.py --data "$ROOT_DIR" --hmr_type "$HMR_TYPE" "$SAVE_FLAG" "$CONTACT_FLAG"
+python visualizer_megasam.py --data "$ROOT_DIR" --hmr_type "$HMR_TYPE" "$SAVE_FLAG" "$CONTACT_FLAG" "$HUMAN_CONTACT_FLAG"

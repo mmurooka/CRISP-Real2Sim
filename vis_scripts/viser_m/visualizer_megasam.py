@@ -880,6 +880,7 @@ def main(
     sq_loss_threshold: Optional[float] = None,
     save_clustering: bool = True,
     use_contact: bool = False,
+    human_contact: bool = False,
 ) -> None:
     from pathlib import Path  # <-- Import Path here if not already imported
     tgt_name = str(data).split('_sgd')[0].split('/')[-1]   # gives 'MPH112_00169_01_tram'
@@ -1795,6 +1796,11 @@ def main(
     # single_image = False
     # single_image = bool(int(tgt_name[0]))
 
+    # Moving-object contacts can be displayed on the human without treating
+    # their world positions as constraints on a static scene.
+    color_human_contacts = human_contact or use_contact
+    if color_human_contacts and not Path(interact_contact_path).is_dir():
+        raise FileNotFoundError(f"Human contact predictions missing: {interact_contact_path}")
     USE_CONTACT = use_contact
     if 'qitao' in tgt_name or 'pk' in tgt_name or 'IMG' in tgt_name:
       single_image = False 
@@ -2181,7 +2187,7 @@ def main(
 
                 mesh_color = [152, 251, 152]  # lighter pastel green for HMR meshes
                 mesh_opacity = 1.0
-                if USE_CONTACT:
+                if color_human_contacts:
                     # Use the prediction for this original video frame, rather
                     # than the index in the subsampled visualization sequence.
                     vertex_colors = contact_vertex_colors(
