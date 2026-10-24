@@ -20,6 +20,45 @@ The scripts below are an independent moving-cuboid extension; they are not the u
 
 All generated videos, data, models and reports belong in ignored directories. Changes to code are committed separately from those outputs. Source video hashes, timestamp arrays, world-frame identifiers and body topology must match before contacts are assembled.
 
+### Optional local whole-body language hypotheses
+
+`infer_wholebody_contact_vlm.py` compares a local Qwen3-VL-4B-Instruct model
+against the existing InteractVLM contact predictions. It examines the whole
+body without presupposing a leg contact, retains the unmodified response and
+its parsed categories, and records image/model hashes and generation settings.
+Model files must already be present with a completed `download_manifest.json`
+containing their pinned Hub revision, filenames and byte sizes. Inference uses
+offline mode and local files only; it does not send images to an inference API.
+`setups/download_local_contact_vlm.py` obtains the pinned public weights (about
+8.9 GB) without credentials and skips an already complete local download.
+
+```bash
+.venv/bin/python setups/download_local_contact_vlm.py
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 .venv/bin/python scripts/infer_wholebody_contact_vlm.py \
+  --model data/downloads/qwen3-vl-4b-instruct \
+  --frames data/move_box_contact_img/move_box_adjusted_by_leg \
+  --frame-indices 50 111 120 143 150 163 200 300 \
+  --output results/move_box_adjusted_by_leg/qwen_contact_samples_v1
+```
+
+These are uncalibrated image-level hypotheses, not SMPL vertex masks or measured
+contact forces. Anatomical left/right can remain unknown. Hidden contact and
+2D overlap remain ambiguous. The script does not overwrite InteractVLM output
+or automatically change reconstruction, retargeting, or RL targets.
+
+After inference on **every** frame, `fuse_semantic_contact_cues.py --language DIR
+--image-cues DIR --output DIR` intersects likely region mentions with the separate
+image-boundary/3D-proximity candidates and requires three consecutive frames.
+It ignores unreliable language left/right claims when proposing a body-part
+family; the image/geometry gate selects anatomical sides. Chest/abdomen map to
+torso; knee and thigh remain distinct. Missing or uncertain responses cannot
+become positive contact labels. A conservative English-text check downgrades
+"likely" labels whose own explanation denies contact or identifies the floor
+as the contact target; this check can introduce false negatives and is not a
+second visual classifier. Raw responses, uncertainty, rejected proposals,
+and source hashes are retained. The output is a separate candidate supplement,
+not a replacement for learned vertex masks or a measured contact assignment.
+
 ## Interpretation and current limitations
 
 - Silhouette agreement is an image-space check, not independent 3D validation. A cuboid can fit its silhouette while a recovered hand penetrates it or lies behind it.
