@@ -28,3 +28,23 @@ All generated videos, data, models and reports belong in ignored directories. Ch
 - `--geometry-only` in PRISM explicitly removes the learned visual prior. Its output must not be presented as InteractVLM predictions. Near-surface false positives and intersections are expected when human and object reconstructions disagree.
 - Forces are explanatory and mass-normalized when mass is unknown. A region is conditionally necessary only if the full wrench fit is feasible and removing that entire region makes it infeasible. Neither force fitting nor a small image residual proves the true contact label.
 - A single video and synthetic analytic tests do not establish generalization, novelty or real-robot transfer. Human/object joint refinement, contact uncertainty, independent labels, retargeting and RL evaluation remain required.
+
+### Local result bundle
+
+`export_hoi_bundle.py` collects a selected human/object reconstruction, contact
+provenance, separate image cues and a G1 kinematic reference into a local ignored
+directory. It validates source-video hashes, timestamps, vertex indexing, object
+poses and retargeting provenance before writing atomically. The bundle includes
+an HTML data guide and SHA256 manifest; it does not include an executable robot
+controller or promote candidate contacts to ground truth.
+
+```bash
+.venv/bin/python scripts/export_hoi_bundle.py \
+  --human results/move_box_adjusted_by_leg/human_contact_refined_v2.npz \
+  --objects results/move_box_adjusted_by_leg/box_silhouette_geometry_v5.npz \
+  --contact-input results/move_box_adjusted_by_leg/contact_input_refined_v2.npz \
+  --contacts results/move_box_adjusted_by_leg/contacts_refined_v2 \
+  --image-cues results/move_box_adjusted_by_leg/image_contact_cues_v1 \
+  --g1 results/move_box_adjusted_by_leg/g1_wrench_optimized_v2 \
+  --output results/exports/move_box_hoi_v1
+```
