@@ -183,7 +183,7 @@ def main():
             encoder.stdin.close()
             if encoder.wait():raise RuntimeError('Video encoding failed')
     if stills:cv2.imwrite(str(args.output),cv2.cvtColor(np.concatenate(stills,axis=0),cv2.COLOR_RGB2BGR))
-    args.output.with_suffix('.json').write_text(json.dumps(dict(source_human_sha256=sha256(args.human),
+    Path(str(args.output)+'.json').write_text(json.dumps(dict(output_media=str(args.output),source_human_sha256=sha256(args.human),
         requested_crops=str(requested_crops),effective_crops=str(args.crops),
         face_pixelated=bool(crop_meta.get('privacy_pixelated')),
         crop_metadata_sha256=sha256(args.crops/'crop_metadata.json'),

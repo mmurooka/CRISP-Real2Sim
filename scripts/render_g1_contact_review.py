@@ -112,7 +112,7 @@ def main():
             process.stdin.close()
             if process.wait():raise RuntimeError('Video encoding failed')
     if stills:cv2.imwrite(str(args.output),cv2.cvtColor(np.concatenate(stills,axis=0),cv2.COLOR_RGB2BGR))
-    args.output.with_suffix('.json').write_text(json.dumps(dict(
+    Path(str(args.output)+'.json').write_text(json.dumps(dict(output_media=str(args.output),
         source_trajectory=str(root.resolve()),
         trajectory_sha256=hashlib.sha256((root/'trajectory.npz').read_bytes()).hexdigest(),
         requested_crops=str(requested_crops),effective_crops=str(args.crops),
