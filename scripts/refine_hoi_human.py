@@ -37,6 +37,15 @@ def visual_contact_gate(vertices,cameras,intrinsic,object_masks,max_distance_px=
     return result
 
 
+def region_patch_loss(gap,groups,maximum_vertices=20):
+    """Require a small patch in EACH predicted region, not an entire hand shell."""
+    values=[]
+    for ids in groups:
+        k=min(maximum_vertices,len(ids))
+        values.append(torch.topk(gap[ids].square(),k,largest=False).values.mean())
+    return torch.stack(values).mean() if values else gap.sum()*0
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ('human','object','hmr-result','observations','output'):
@@ -49,11 +58,14 @@ def main():
     parser.add_argument('--batch-size',type=int,default=12)
     parser.add_argument('--scene',type=Path,help='Required with learned contacts, for independent object-mask proximity')
     args=parser.parse_args()
+    if args.iterations<1 or args.batch_size<1:raise ValueError('Positive iteration and batch counts required')
+    code_sha=sha256(__file__)
     if args.output.exists():raise FileExistsError(args.output)
     root=Path(__file__).resolve().parents[1]
     sys.path.insert(0,str(root/'prep/HMR'));sys.path.insert(0,str(args.prism_root))
     from hmr4d.utils.body_model.body_model_smplx import BodyModelSMPLX
     from prism_reconstruction.adapters import load_interactvlm_contacts
+    from prism_reconstruction.geometry import smpl_vertex_regions
     with np.load(args.human) as a:human=dict(a)
     with np.load(args.object) as a:box=dict(a)
     for field in ('world_frame','source_video_sha256','length_unit'):
@@ -92,6 +104,15 @@ def main():
         gate=visual_contact_gate(human['human_vertices_world'],human['world_from_camera'],human['scene_intrinsics'],object_masks)
         scores*=tensor(gate)
         del original,local
+    labels=smpl_vertex_regions(human['template_vertices'],human['skinning_weights'],human['rest_joints'])
+    candidate_mask=(scores>0).cpu().numpy()
+    contact_groups=[]
+    for mask in candidate_mask:
+        groups=[]
+        for region in np.unique(labels):
+            ids=np.flatnonzero(mask&(labels==region))
+            if len(ids)>=3:groups.append(torch.as_tensor(ids,device=device,dtype=torch.long))
+        contact_groups.append(groups)
     delta_pose=torch.nn.Parameter(torch.zeros_like(params['body_pose']))
     delta_orient=torch.nn.Parameter(torch.zeros_like(params['global_orient']))
     delta_trans=torch.nn.Parameter(torch.zeros_like(params['transl']))
@@ -122,8 +143,10 @@ def main():
             reprojection=(((uv-keypoints[begin:end,:,:2])/8).square().sum(-1)*confidence).mean()
             penetration=(torch.relu(-gap-.005)/.015).square().mean()
             floor_loss=(torch.relu(floor-world@normal-.015)/.015).square().mean()
-            contact_weight=scores[begin:end]
-            contact=((gap/.03).square().clamp_max(100)*contact_weight).sum()/contact_weight.sum().clamp_min(1)
+            # A learned "hand contact" mask is often the whole hand, including
+            # its back. Flattening that closed surface onto the box is invalid.
+            contact=torch.stack([region_patch_loss(gap[j],contact_groups[begin+j])/.03**2
+                                 for j in range(end-begin)]).mean()
             loss=weight*(reprojection+8*penetration+2*floor_loss+contact)
             loss.backward()
             for name,value in zip(metrics,(reprojection,penetration,floor_loss,contact)):
@@ -154,7 +177,8 @@ def main():
         for key,delta in [('body_pose',delta_pose),('global_orient',delta_orient),('transl',delta_trans)]:optimized[key]+=delta.cpu()
     args.output.parent.mkdir(parents=True,exist_ok=True)
     parameters_file=args.output.with_suffix('.pt');torch.save(dict(smpl_params_incam=optimized),parameters_file)
-    human['source_original_hmr_sha256']=human['source_hmr_sha256'];human['source_hmr_sha256']=np.asarray(sha256(parameters_file))
+    human.setdefault('source_original_hmr_sha256',human['source_hmr_sha256'])
+    human['source_parent_hmr_sha256']=human['source_hmr_sha256'];human['source_hmr_sha256']=np.asarray(sha256(parameters_file))
     human['refinement_stage']=np.asarray('human_pose_given_fixed_object')
     human['contact_prior_source']=np.asarray('interactvlm' if args.contacts else 'none_nonpenetration_only')
     human['refinement_contact_attraction_mask']=(scores>0).cpu().numpy()
@@ -163,6 +187,8 @@ def main():
     metadata=dict(source_human_sha256=sha256(args.human),source_object_sha256=sha256(args.object),
         source_observations_sha256=sha256(args.observations),iterations=args.iterations,best_loss=best_loss,
         contact_prior_source=str(human['contact_prior_source']),history=history,
+        refinement_code_sha256=code_sha,
+        contact_attraction_interpretation='At least one small patch per predicted semantic region; at most 20 nearest eligible vertices per region, not the entire predicted hand surface.',
         source_contact_scores_sha256=contact_scores_sha,
         contact_attraction_gate=dict(maximum_original_surface_gap_m=.30,maximum_object_mask_distance_scene_pixels=3.,
                                      scene_image_size_hw=human['scene_image_size_hw'].tolist()),
