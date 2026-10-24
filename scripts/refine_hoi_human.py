@@ -5,11 +5,13 @@ This is conditional human refinement, not a joint human/object optimizer. The
 geometry-only ablation adds nonpenetration but never invents contact attraction.
 """
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import sys
 
 import numpy as np
+import cv2
 import torch
 
 from export_hoi_human import sha256
@@ -18,6 +20,21 @@ from export_hoi_human import sha256
 def cuboid_signed_distance(points,half):
     q=points.abs()-half
     return torch.linalg.vector_norm(q.clamp_min(0),dim=-1)+q.amax(dim=-1).clamp_max(0)
+
+
+def visual_contact_gate(vertices,cameras,intrinsic,object_masks,max_distance_px=3.):
+    """Reject attraction across a visible image gap, even if the VLM says contact."""
+    result=np.zeros(vertices.shape[:2],bool)
+    for i,(points,camera,mask) in enumerate(zip(vertices,cameras,object_masks)):
+        incam=(points-camera[:3,3])@camera[:3,:3]
+        projected=incam@intrinsic.T
+        uv=np.rint(projected[:,:2]/np.maximum(projected[:,2:],1e-6)).astype(int)
+        height,width=mask.shape
+        valid=(incam[:,2]>.1)&(uv[:,0]>=0)&(uv[:,0]<width)&(uv[:,1]>=0)&(uv[:,1]<height)
+        distance=cv2.distanceTransform((~mask.astype(bool)).astype(np.uint8),cv2.DIST_L2,5)
+        ids=np.flatnonzero(valid)
+        result[i,ids]=distance[uv[ids,1],uv[ids,0]]<=max_distance_px
+    return result
 
 
 def main():
@@ -30,6 +47,7 @@ def main():
     parser.add_argument('--prism-root',type=Path,default=Path(__file__).resolve().parents[2]/'PRISM')
     parser.add_argument('--iterations',type=int,default=160)
     parser.add_argument('--batch-size',type=int,default=12)
+    parser.add_argument('--scene',type=Path,help='Required with learned contacts, for independent object-mask proximity')
     args=parser.parse_args()
     if args.output.exists():raise FileExistsError(args.output)
     root=Path(__file__).resolve().parents[1]
@@ -59,13 +77,20 @@ def main():
     normal=tensor(box['floor_normal_world']);floor=float(box['floor_offset_m'])
     k=tensor(box['intrinsic_full']);keypoints=tensor(observations)
     scores=torch.zeros((count,6890),device=device)
+    contact_scores_sha=None
     if args.contacts:
+        if args.scene is None or sha256(args.scene)!=str(human['source_scene_sha256']):
+            raise ValueError('Learned contact attraction requires the matching calibrated scene')
         scores=tensor(load_interactvlm_contacts(args.contacts,human['frame_indices'],source_video_sha256=str(human['source_video_sha256'])))
+        contact_scores_sha=hashlib.sha256(scores.cpu().numpy().tobytes()).hexdigest()
         # Learned contacts far from the independently estimated object are
         # unsupported, not permission to drag a limb across the whole scene.
         original=tensor(human['human_vertices_world'])
         local=(original-poses[:,None,:3,3])@poses[:,:3,:3]
         scores*=cuboid_signed_distance(local,half).abs()<.30
+        with np.load(args.scene) as a:object_masks=a['object_mask']
+        gate=visual_contact_gate(human['human_vertices_world'],human['world_from_camera'],human['scene_intrinsics'],object_masks)
+        scores*=tensor(gate)
         del original,local
     delta_pose=torch.nn.Parameter(torch.zeros_like(params['body_pose']))
     delta_orient=torch.nn.Parameter(torch.zeros_like(params['global_orient']))
@@ -132,11 +157,16 @@ def main():
     human['source_original_hmr_sha256']=human['source_hmr_sha256'];human['source_hmr_sha256']=np.asarray(sha256(parameters_file))
     human['refinement_stage']=np.asarray('human_pose_given_fixed_object')
     human['contact_prior_source']=np.asarray('interactvlm' if args.contacts else 'none_nonpenetration_only')
+    human['refinement_contact_attraction_mask']=(scores>0).cpu().numpy()
     np.savez_compressed(args.output,**human)
     gap=np.concatenate(gaps);error=np.concatenate(errors);visible=observations[:,:,2]>.5
     metadata=dict(source_human_sha256=sha256(args.human),source_object_sha256=sha256(args.object),
         source_observations_sha256=sha256(args.observations),iterations=args.iterations,best_loss=best_loss,
         contact_prior_source=str(human['contact_prior_source']),history=history,
+        source_contact_scores_sha256=contact_scores_sha,
+        contact_attraction_gate=dict(maximum_original_surface_gap_m=.30,maximum_object_mask_distance_scene_pixels=3.,
+                                     scene_image_size_hw=human['scene_image_size_hw'].tolist()),
+        contact_attraction_vertices_per_frame=(scores>0).sum(dim=1).cpu().tolist(),
         visible_keypoint_error_median_px=float(np.median(error[visible])),visible_keypoint_error_p95_px=float(np.quantile(error[visible],.95)),
         vertices_penetrating_2cm=int((gap<-.02).sum()),frames_penetrating_2cm=int((gap<-.02).any(axis=1).sum()),
         max_penetration_m=float(max(0,-gap.min())),

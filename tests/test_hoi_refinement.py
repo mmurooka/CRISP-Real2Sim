@@ -6,10 +6,19 @@ import numpy as np
 import torch
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from refine_hoi_human import cuboid_signed_distance
+from refine_hoi_human import cuboid_signed_distance,visual_contact_gate
 
 
 class RefinementTests(unittest.TestCase):
+    def test_visual_gap_rejects_false_contact_attraction(self):
+        camera=np.eye(4);camera[:3,:3]=[[0,-1,0],[1,0,0],[0,0,1]];camera[:3,3]=[1.,2.,3.]
+        points=np.array([[0,0,2],[1,0,2],[0,0,-1],[.4,0,2]])
+        world=points@camera[:3,:3].T+camera[:3,3]
+        mask=np.zeros((20,20),bool);mask[9:12,9:12]=True
+        k=np.array([[10.,0,10],[0,10,10],[0,0,1]])
+        actual=visual_contact_gate(world[None],camera[None],k,mask[None],max_distance_px=1.)
+        np.testing.assert_array_equal(actual,[[True,False,False,True]])
+
     def test_signed_distance_and_gradient_at_faces_edges_and_inside(self):
         points=torch.tensor([[.6,.1,.1],[.6,.7,0.],[0.,.45,0.]],dtype=torch.float64,requires_grad=True)
         half=torch.tensor([.5,.5,.5],dtype=torch.float64)
