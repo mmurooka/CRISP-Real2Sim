@@ -13,8 +13,8 @@
 	url = https://github.com/UniFlowMatch/UFM
 [submodule "prep/Contact-Predictor"]
 	path = prep/Contact-Predictor
-	url = https://github.com/CRISP-Real2Sim/Contact-Predictor.git
-	branch = main
+	url = https://github.com/mmurooka/Contact-Predictor.git
+	branch = dev
 [submodule "prep/NKSR"]
 	path = prep/NKSR
 	url = https://github.com/nv-tlabs/NKSR.git
